@@ -82,9 +82,6 @@ module Audited
         if options[:async]
           class_attribute :async_class, instance_writer: false
           class_attribute :batched_audit_attrs_sym, instance_writer: false
-          after_commit :audit_queue
-          self.batched_audit_attrs_sym = "#{self.name}_batched_audit_attrs".to_sym
-          Thread.current[self.batched_audit_attrs_sym] = []
           self.async_enabled = true
         else
           self.async_enabled = false
@@ -267,18 +264,16 @@ module Audited
       # Sends batched audits to a queue for processing and empties the
       # batch. Called after commit. If anything goes wrong, the audit
       # records are written synchronously.
-      def audit_queue
+      def audit_queue(attrs)
         raise "nil Audited.async_class" unless Audited.async_class # rescue below
-        Audited.async_class.enqueue(Audited.audit_class.name,
-                                    Thread.current[self.class.batched_audit_attrs_sym])
+        Audited.async_class.perform_in(10.seconds, Audited.audit_class.name,
+                                    attrs)
       rescue
         without_async_auditing do
           Thread.current[self.class.batched_audit_attrs_sym].each do |attrs|
             write_audit(attrs)
           end
         end
-      ensure
-        Thread.current[self.class.batched_audit_attrs_sym] = []
       end
 
       def write_audit(attrs)
@@ -311,7 +306,8 @@ module Audited
           attrs[:user_type] = user.class.name
         end
         attrs[:created_at] = Time.now
-        Thread.current[self.class.batched_audit_attrs_sym] << attrs
+        audit_queue([attrs])
+        #Thread.current[self.class.batched_audit_attrs_sym] << attrs
       end
 
       def require_comment
