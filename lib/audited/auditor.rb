@@ -270,9 +270,7 @@ module Audited
                                     attrs)
       rescue
         without_async_auditing do
-          Thread.current[self.class.batched_audit_attrs_sym].each do |attrs|
-            write_audit(attrs)
-          end
+          write_audit(attrs)
         end
       end
 
